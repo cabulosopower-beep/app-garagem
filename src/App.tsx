@@ -15,6 +15,16 @@ import type { Session } from '@supabase/supabase-js';
 type View = { mode: 'list' } | { mode: 'detail'; vehicleId: string };
 type Tab = 'garage' | 'calendar' | 'settings';
 
+let recoveryDetectedAtBoot =
+  window.location.hash.includes('type=recovery') ||
+  window.location.search.includes('recovery=1');
+
+supabase.auth.onAuthStateChange((event) => {
+  if (event === 'PASSWORD_RECOVERY') {
+    recoveryDetectedAtBoot = true;
+  }
+});
+
 export default function App() {
   const [vehicles, setVehicles] = useState<VehicleWithStats[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -24,17 +34,21 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('garage');
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
-  const [isRecoveringPassword, setIsRecoveringPassword] = useState(() =>
-    window.location.hash.includes('type=recovery'),
+  const [isRecoveringPassword, setIsRecoveringPassword] = useState(
+    () => recoveryDetectedAtBoot,
   );
 
   useEffect(() => {
+    if (recoveryDetectedAtBoot) {
+      setIsRecoveringPassword(true);
+    }
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setAuthReady(true);
     });
     const { data: listener } = supabase.auth.onAuthStateChange((event, newSession) => {
       if (event === 'PASSWORD_RECOVERY') {
+        recoveryDetectedAtBoot = true;
         setIsRecoveringPassword(true);
       }
       setSession(newSession);
@@ -136,10 +150,16 @@ export default function App() {
     return (
       <AuthScreen
         initialMode={isRecoveringPassword ? 'update-password' : 'signin'}
-        onPasswordUpdated={() => setIsRecoveringPassword(false)}
+        onPasswordUpdated={() => {
+          recoveryDetectedAtBoot = false;
+          setIsRecoveringPassword(false);
+        }}
       />
     );
   }
+
+  const userEmail = session.user.email ?? '';
+  const userName = (session.user.user_metadata?.full_name as string | undefined)?.trim() ?? '';
 
   if (view.mode === 'detail') {
     const vehicle = vehicles.find((v) => v.id === view.vehicleId);
@@ -158,17 +178,19 @@ export default function App() {
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
       <header className="bg-white border-b border-slate-100 sticky top-0 z-30">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center text-white">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center text-white shrink-0">
               <Car size={22} />
             </div>
-            <div>
+            <div className="min-w-0">
               <h1 className="text-lg font-bold text-slate-900 leading-none">Garagem</h1>
-              <p className="text-xs text-slate-500 mt-0.5">Controle de manutenção</p>
+              <p className="text-xs text-slate-500 mt-1 truncate">
+                {userName ? `${userName} • ${userEmail}` : userEmail || 'Controle de manutenção'}
+              </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             {tab === 'garage' && (
               <button
                 onClick={() => setShowForm(true)}

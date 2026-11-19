@@ -1,5 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Download, Loader2, CalendarClock, AlertCircle, Database } from 'lucide-react';
+import {
+  Download,
+  Loader2,
+  CalendarClock,
+  AlertCircle,
+  Database,
+  User,
+  Lock,
+  Eye,
+  EyeOff,
+  CheckCircle2,
+} from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Vehicle, Maintenance, Alert } from '@/types';
 
@@ -21,10 +32,62 @@ export default function SettingsView() {
   const [error, setError] = useState<string | null>(null);
   const [lastBackup, setLastBackup] = useState<string | null>(null);
 
+  const [accountName, setAccountName] = useState('');
+  const [accountEmail, setAccountEmail] = useState('');
+
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
+
   useEffect(() => {
     const stored = localStorage.getItem(LAST_BACKUP_KEY);
     if (stored) setLastBackup(stored);
+
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) {
+        setAccountEmail(data.user.email ?? '');
+        const fullName = (data.user.user_metadata?.full_name as string | undefined)?.trim() ?? '';
+        setAccountName(fullName);
+      }
+    });
   }, []);
+
+  async function handleChangePassword(e: React.FormEvent) {
+    e.preventDefault();
+    setPasswordError(null);
+    setPasswordSuccess(null);
+
+    if (newPassword.length < 6) {
+      setPasswordError('A nova senha deve ter no mínimo 6 caracteres.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError('As duas senhas não estão iguais.');
+      return;
+    }
+
+    setSavingPassword(true);
+    try {
+      const { error: updateErr } = await supabase.auth.updateUser({ password: newPassword });
+      if (updateErr) throw updateErr;
+      setNewPassword('');
+      setConfirmPassword('');
+      setPasswordSuccess('Senha alterada com sucesso!');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erro ao alterar senha.';
+      if (msg.toLowerCase().includes('different from the old password')) {
+        setPasswordError('A nova senha precisa ser diferente da senha atual.');
+      } else {
+        setPasswordError(msg);
+      }
+    } finally {
+      setSavingPassword(false);
+    }
+  }
 
   const handleExport = useCallback(async () => {
     setExporting(true);
@@ -80,6 +143,94 @@ export default function SettingsView() {
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6">
       <h2 className="text-lg font-bold text-slate-900 mb-1">Configurações</h2>
       <p className="text-sm text-slate-500 mb-6">Backup, dados e segurança da sua conta.</p>
+
+      {/* Minha conta e senha */}
+      <div className="bg-white rounded-2xl border border-slate-100 p-5 mb-4">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center text-white">
+            <User size={20} />
+          </div>
+          <div>
+            <h3 className="font-semibold text-slate-900">Minha conta</h3>
+            <p className="text-xs text-slate-500">Dados do usuário conectado e troca de senha.</p>
+          </div>
+        </div>
+
+        <div className="bg-slate-50 rounded-xl p-3.5 mb-5 space-y-1">
+          {accountName && (
+            <p className="text-sm font-medium text-slate-800">{accountName}</p>
+          )}
+          <p className="text-sm text-slate-600">{accountEmail || 'Carregando...'}</p>
+        </div>
+
+        <form onSubmit={handleChangePassword} className="space-y-3 border-t border-slate-100 pt-4">
+          <p className="text-sm font-semibold text-slate-800">Alterar senha</p>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Nova senha</label>
+            <div className="relative">
+              <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type={showNewPassword ? 'text' : 'password'}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Mínimo 6 caracteres"
+                className="w-full pl-9 pr-10 py-2.5 rounded-xl border border-slate-200 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 outline-none transition-all text-sm text-slate-900 placeholder-slate-400"
+              />
+              <button
+                type="button"
+                tabIndex={-1}
+                onClick={() => setShowNewPassword((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                {showNewPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Confirmar nova senha</label>
+            <div className="relative">
+              <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type={showConfirmPassword ? 'text' : 'password'}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Repita a nova senha"
+                className="w-full pl-9 pr-10 py-2.5 rounded-xl border border-slate-200 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 outline-none transition-all text-sm text-slate-900 placeholder-slate-400"
+              />
+              <button
+                type="button"
+                tabIndex={-1}
+                onClick={() => setShowConfirmPassword((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+          </div>
+
+          {passwordError && (
+            <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{passwordError}</p>
+          )}
+
+          {passwordSuccess && (
+            <div className="text-sm text-emerald-700 bg-emerald-50 px-3 py-2.5 rounded-lg flex items-center gap-2">
+              <CheckCircle2 size={16} className="shrink-0" />
+              <span>{passwordSuccess}</span>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={savingPassword}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 transition-colors disabled:opacity-50"
+          >
+            {savingPassword && <Loader2 size={16} className="animate-spin" />}
+            Salvar nova senha
+          </button>
+        </form>
+      </div>
 
       {/* Backup e dados */}
       <div className="bg-white rounded-2xl border border-slate-100 p-5 mb-4">

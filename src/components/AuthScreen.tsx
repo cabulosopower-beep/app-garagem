@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Car, Loader2, Mail, Lock, User, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { Car, Loader2, Mail, Lock, User, ArrowLeft, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 type Mode = 'signin' | 'signup' | 'forgot' | 'update-password';
@@ -14,6 +14,8 @@ export default function AuthScreen({ initialMode = 'signin', onPasswordUpdated }
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,6 +29,9 @@ export default function AuthScreen({ initialMode = 'signin', onPasswordUpdated }
     setMode(newMode);
     setError(null);
     setMessage(null);
+    setConfirmPassword('');
+    setShowPassword(false);
+    setShowConfirmPassword(false);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -42,7 +47,7 @@ export default function AuthScreen({ initialMode = 'signin', onPasswordUpdated }
       setLoading(true);
       try {
         const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-          redirectTo: window.location.origin,
+          redirectTo: `${window.location.origin}?recovery=1`,
         });
         if (resetError) throw resetError;
         setMessage('Link enviado! Verifique seu e-mail (e a caixa de spam) para criar uma nova senha.');
@@ -88,6 +93,17 @@ export default function AuthScreen({ initialMode = 'signin', onPasswordUpdated }
       return;
     }
 
+    if (mode === 'signup') {
+      if (password.length < 6) {
+        setError('A senha deve ter no mínimo 6 caracteres.');
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError('As duas senhas não estão iguais.');
+        return;
+      }
+    }
+
     setLoading(true);
     try {
       if (mode === 'signup') {
@@ -124,6 +140,8 @@ export default function AuthScreen({ initialMode = 'signin', onPasswordUpdated }
       setLoading(false);
     }
   }
+
+  const showConfirmField = mode === 'signup' || mode === 'update-password';
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
@@ -238,30 +256,46 @@ export default function AuthScreen({ initialMode = 'signin', onPasswordUpdated }
                 <div className="relative">
                   <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••"
-                    className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 outline-none transition-all text-slate-900 placeholder-slate-400"
+                    className="w-full pl-9 pr-10 py-2.5 rounded-xl border border-slate-200 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 outline-none transition-all text-slate-900 placeholder-slate-400"
                   />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
                 </div>
               </div>
             )}
 
-            {mode === 'update-password' && (
+            {showConfirmField && (
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                  Confirmar nova senha
+                  {mode === 'update-password' ? 'Confirmar nova senha' : 'Confirmar senha'}
                 </label>
                 <div className="relative">
                   <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
-                    type="password"
+                    type={showConfirmPassword ? 'text' : 'password'}
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="••••••"
-                    className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 outline-none transition-all text-slate-900 placeholder-slate-400"
+                    className="w-full pl-9 pr-10 py-2.5 rounded-xl border border-slate-200 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 outline-none transition-all text-slate-900 placeholder-slate-400"
                   />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onClick={() => setShowConfirmPassword((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
                 </div>
               </div>
             )}

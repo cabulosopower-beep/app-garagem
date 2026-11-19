@@ -32,6 +32,13 @@ interface VehicleDetailProps {
 
 type DetailTab = 'maintenance' | 'parts';
 
+type DetailNavState = {
+  showMtnForm: boolean;
+  showVehForm: boolean;
+  receiptPath: string | null;
+  confirmDelete: boolean;
+};
+
 const CATEGORY_STYLES: Record<MaintenanceCategory, string> = {
   oleo: 'bg-amber-100 text-amber-700',
   freio: 'bg-red-100 text-red-700',
@@ -63,6 +70,60 @@ export default function VehicleDetail({ vehicle, onBack, onChanged }: VehicleDet
   useEffect(() => {
     loadMaintenances();
   }, [vehicle.id]);
+
+  useEffect(() => {
+    function handlePopState(e: PopStateEvent) {
+      const d = e.state?.detailNav as DetailNavState | undefined;
+      if (d) {
+        setShowMtnForm(Boolean(d.showMtnForm));
+        setShowVehForm(Boolean(d.showVehForm));
+        setReceiptPath(d.receiptPath ?? null);
+        setConfirmDelete(Boolean(d.confirmDelete));
+      } else {
+        setShowMtnForm(false);
+        setShowVehForm(false);
+        setReceiptPath(null);
+        setConfirmDelete(false);
+      }
+    }
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  function pushDetailModal(next: Partial<DetailNavState>) {
+    const nextState: DetailNavState = {
+      showMtnForm: next.showMtnForm ?? false,
+      showVehForm: next.showVehForm ?? false,
+      receiptPath: next.receiptPath ?? null,
+      confirmDelete: next.confirmDelete ?? false,
+    };
+
+    setShowMtnForm(nextState.showMtnForm);
+    setShowVehForm(nextState.showVehForm);
+    setReceiptPath(nextState.receiptPath);
+    setConfirmDelete(nextState.confirmDelete);
+
+    const currentDepth =
+      typeof window.history.state?.depth === 'number' ? window.history.state.depth : 1;
+
+    window.history.pushState(
+      {
+        ...(window.history.state ?? {}),
+        depth: currentDepth + 1,
+        detailNav: nextState,
+      },
+      '',
+    );
+  }
+
+  function closeDetailModal(fallback: () => void) {
+    if (window.history.state?.detailNav) {
+      window.history.back();
+    } else {
+      fallback();
+    }
+  }
 
   async function loadMaintenances() {
     setLoading(true);
@@ -116,7 +177,11 @@ export default function VehicleDetail({ vehicle, onBack, onChanged }: VehicleDet
     if (!error) {
       if (vehicle.photo_url) await deleteStorageFile(vehicle.photo_url);
       onChanged();
-      onBack();
+      if (window.history.state?.detailNav) {
+        window.history.go(-2);
+      } else {
+        onBack();
+      }
     }
   }
 
@@ -124,7 +189,7 @@ export default function VehicleDetail({ vehicle, onBack, onChanged }: VehicleDet
     const { error } = await supabase.from('vehicles').update(data).eq('id', id!);
     if (error) throw error;
     onChanged();
-    setShowVehForm(false);
+    closeDetailModal(() => setShowVehForm(false));
   }
 
   return (
@@ -149,13 +214,13 @@ export default function VehicleDetail({ vehicle, onBack, onChanged }: VehicleDet
           </button>
           <div className="flex gap-2">
             <button
-              onClick={() => setShowVehForm(true)}
+              onClick={() => pushDetailModal({ showVehForm: true })}
               className="w-10 h-10 rounded-full bg-white/15 backdrop-blur hover:bg-white/25 text-white flex items-center justify-center transition-colors"
             >
               <Pencil size={18} />
             </button>
             <button
-              onClick={() => setConfirmDelete(true)}
+              onClick={() => pushDetailModal({ confirmDelete: true })}
               className="w-10 h-10 rounded-full bg-white/15 backdrop-blur hover:bg-red-500/80 text-white flex items-center justify-center transition-colors"
             >
               <Trash2 size={18} />
@@ -242,7 +307,7 @@ export default function VehicleDetail({ vehicle, onBack, onChanged }: VehicleDet
             <button
               onClick={() => {
                 setEditingMtn(null);
-                setShowMtnForm(true);
+                pushDetailModal({ showMtnForm: true });
               }}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 transition-colors"
             >
@@ -285,7 +350,7 @@ export default function VehicleDetail({ vehicle, onBack, onChanged }: VehicleDet
                     <button
                       onClick={() => {
                         setEditingMtn(null);
-                        setShowMtnForm(true);
+                        pushDetailModal({ showMtnForm: true });
                       }}
                       className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 transition-colors"
                     >
@@ -339,7 +404,7 @@ export default function VehicleDetail({ vehicle, onBack, onChanged }: VehicleDet
                     <div className="flex items-center gap-1 shrink-0">
                       {m.receipt_url && (
                         <button
-                          onClick={() => setReceiptPath(m.receipt_url)}
+                          onClick={() => pushDetailModal({ receiptPath: m.receipt_url })}
                           className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors"
                           title="Ver recibo"
                         >
@@ -349,7 +414,7 @@ export default function VehicleDetail({ vehicle, onBack, onChanged }: VehicleDet
                       <button
                         onClick={() => {
                           setEditingMtn(m);
-                          setShowMtnForm(true);
+                          pushDetailModal({ showMtnForm: true });
                         }}
                         className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors"
                       >
@@ -375,7 +440,7 @@ export default function VehicleDetail({ vehicle, onBack, onChanged }: VehicleDet
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
             className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
-            onClick={() => setConfirmDelete(false)}
+            onClick={() => closeDetailModal(() => setConfirmDelete(false))}
           />
           <div className="relative bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full">
             <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center text-red-500 mb-4">
@@ -388,7 +453,7 @@ export default function VehicleDetail({ vehicle, onBack, onChanged }: VehicleDet
             </p>
             <div className="flex gap-3 mt-6">
               <button
-                onClick={() => setConfirmDelete(false)}
+                onClick={() => closeDetailModal(() => setConfirmDelete(false))}
                 className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-medium hover:bg-slate-50 transition-colors"
               >
                 Cancelar
@@ -406,18 +471,21 @@ export default function VehicleDetail({ vehicle, onBack, onChanged }: VehicleDet
 
       <MaintenanceFormModal
         open={showMtnForm}
-        onClose={() => setShowMtnForm(false)}
+        onClose={() => closeDetailModal(() => setShowMtnForm(false))}
         onSave={handleSaveMtn}
         vehicle={vehicle}
         maintenance={editingMtn}
       />
       <VehicleFormModal
         open={showVehForm}
-        onClose={() => setShowVehForm(false)}
+        onClose={() => closeDetailModal(() => setShowVehForm(false))}
         onSave={handleSaveVehicle}
         vehicle={vehicle}
       />
-      <ReceiptViewer path={receiptPath} onClose={() => setReceiptPath(null)} />
+      <ReceiptViewer
+        path={receiptPath}
+        onClose={() => closeDetailModal(() => setReceiptPath(null))}
+      />
     </div>
   );
 }

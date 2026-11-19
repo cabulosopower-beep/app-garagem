@@ -56,11 +56,82 @@ export default function App() {
     return () => listener.subscription.unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (!session || isRecoveringPassword) return;
+
+    if (!window.history.state?.appNav) {
+      window.history.replaceState(
+        { appNav: true, depth: 0, tab: 'garage', view: { mode: 'list' }, showForm: false },
+        '',
+      );
+    }
+
+    function handlePopState(e: PopStateEvent) {
+      const s = e.state;
+      if (s && s.appNav) {
+        setTab(s.tab ?? 'garage');
+        setView(s.view ?? { mode: 'list' });
+        setShowForm(Boolean(s.showForm));
+      } else {
+        setTab('garage');
+        setView({ mode: 'list' });
+        setShowForm(false);
+      }
+    }
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [session, isRecoveringPassword]);
+
+  function navigateTo(next: { tab?: Tab; view?: View; showForm?: boolean }) {
+    const nextTab = next.tab ?? tab;
+    const nextView = next.view ?? view;
+    const nextShowForm = next.showForm ?? showForm;
+
+    if (
+      nextTab === tab &&
+      JSON.stringify(nextView) === JSON.stringify(view) &&
+      nextShowForm === showForm
+    ) {
+      return;
+    }
+
+    const currentDepth =
+      typeof window.history.state?.depth === 'number' ? window.history.state.depth : 0;
+
+    setTab(nextTab);
+    setView(nextView);
+    setShowForm(nextShowForm);
+
+    window.history.pushState(
+      {
+        appNav: true,
+        depth: currentDepth + 1,
+        tab: nextTab,
+        view: nextView,
+        showForm: nextShowForm,
+      },
+      '',
+    );
+  }
+
+  function goBackOr(fallback: () => void) {
+    const currentDepth =
+      typeof window.history.state?.depth === 'number' ? window.history.state.depth : 0;
+    if (currentDepth > 0) {
+      window.history.back();
+    } else {
+      fallback();
+    }
+  }
+
   async function handleSignOut() {
     await supabase.auth.signOut();
     setVehicles([]);
     setAlerts([]);
+    setTab('garage');
     setView({ mode: 'list' });
+    setShowForm(false);
   }
 
   const loadVehicles = useCallback(async () => {
@@ -167,7 +238,7 @@ export default function App() {
       return (
         <VehicleDetail
           vehicle={vehicle}
-          onBack={() => setView({ mode: 'list' })}
+          onBack={() => goBackOr(() => setView({ mode: 'list' }))}
           onChanged={loadVehicles}
         />
       );
@@ -193,7 +264,7 @@ export default function App() {
           <div className="flex items-center gap-2 shrink-0">
             {tab === 'garage' && (
               <button
-                onClick={() => setShowForm(true)}
+                onClick={() => navigateTo({ showForm: true })}
                 className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 transition-colors shadow-sm"
               >
                 <Plus size={18} />
@@ -214,7 +285,7 @@ export default function App() {
         <div className="max-w-5xl mx-auto px-4 sm:px-6">
           <div className="flex gap-1">
             <button
-              onClick={() => setTab('garage')}
+              onClick={() => navigateTo({ tab: 'garage' })}
               className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                 tab === 'garage'
                   ? 'border-slate-900 text-slate-900'
@@ -225,7 +296,7 @@ export default function App() {
               Veículos
             </button>
             <button
-              onClick={() => setTab('calendar')}
+              onClick={() => navigateTo({ tab: 'calendar' })}
               className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors relative ${
                 tab === 'calendar'
                   ? 'border-slate-900 text-slate-900'
@@ -241,7 +312,7 @@ export default function App() {
               )}
             </button>
             <button
-              onClick={() => setTab('settings')}
+              onClick={() => navigateTo({ tab: 'settings' })}
               className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                 tab === 'settings'
                   ? 'border-slate-900 text-slate-900'
@@ -300,7 +371,7 @@ export default function App() {
                 description="Adicione seu primeiro veículo para começar a registrar manutenções, acompanhar gastos e guardar os recibos."
                 action={
                   <button
-                    onClick={() => setShowForm(true)}
+                    onClick={() => navigateTo({ showForm: true })}
                     className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 transition-colors"
                   >
                     <Plus size={18} />
@@ -315,7 +386,7 @@ export default function App() {
                 <VehicleCard
                   key={v.id}
                   vehicle={v}
-                  onClick={() => setView({ mode: 'detail', vehicleId: v.id })}
+                  onClick={() => navigateTo({ view: { mode: 'detail', vehicleId: v.id } })}
                 />
               ))}
             </div>
@@ -325,7 +396,7 @@ export default function App() {
 
       <VehicleFormModal
         open={showForm}
-        onClose={() => setShowForm(false)}
+        onClose={() => goBackOr(() => setShowForm(false))}
         onSave={handleSaveVehicle}
       />
     </div>

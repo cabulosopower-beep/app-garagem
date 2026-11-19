@@ -1,25 +1,94 @@
-import { useState } from 'react';
-import { Car, Loader2, Mail, Lock, User } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Car, Loader2, Mail, Lock, User, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
-type Mode = 'signin' | 'signup';
+type Mode = 'signin' | 'signup' | 'forgot' | 'update-password';
 
-export default function AuthScreen() {
-  const [mode, setMode] = useState<Mode>('signin');
+interface AuthScreenProps {
+  initialMode?: Mode;
+  onPasswordUpdated?: () => void;
+}
+
+export default function AuthScreen({ initialMode = 'signin', onPasswordUpdated }: AuthScreenProps) {
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMode(initialMode);
+  }, [initialMode]);
+
+  function switchMode(newMode: Mode) {
+    setMode(newMode);
+    setError(null);
+    setMessage(null);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setError(null);
+    setMessage(null);
+
+    if (mode === 'forgot') {
+      if (!email.trim()) {
+        setError('Digite o seu e-mail.');
+        return;
+      }
+      setLoading(true);
+      try {
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+          redirectTo: window.location.origin,
+        });
+        if (resetError) throw resetError;
+        setMessage('Link enviado! Verifique seu e-mail (e a caixa de spam) para criar uma nova senha.');
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Erro inesperado.';
+        if (msg.toLowerCase().includes('rate limit') || msg.toLowerCase().includes('security purposes')) {
+          setError('Muitas tentativas seguidas. Aguarde um pouco antes de tentar de novo.');
+        } else {
+          setError(msg);
+        }
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    if (mode === 'update-password') {
+      if (password.length < 6) {
+        setError('A nova senha deve ter no mínimo 6 caracteres.');
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError('As duas senhas não estão iguais.');
+        return;
+      }
+      setLoading(true);
+      try {
+        const { error: updateError } = await supabase.auth.updateUser({ password });
+        if (updateError) throw updateError;
+        window.history.replaceState(null, '', window.location.pathname);
+        onPasswordUpdated?.();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Erro ao atualizar senha.';
+        setError(msg);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     if (!email.trim() || !password) {
       setError('Preencha e-mail e senha.');
       return;
     }
+
     setLoading(true);
-    setError(null);
     try {
       if (mode === 'signup') {
         const { error: signUpError } = await supabase.auth.signUp({
@@ -28,7 +97,6 @@ export default function AuthScreen() {
           options: { data: name.trim() ? { full_name: name.trim() } : undefined },
         });
         if (signUpError) throw signUpError;
-        // Email confirmation is off, so sign in right away
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email: email.trim(),
           password,
@@ -70,25 +138,54 @@ export default function AuthScreen() {
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-          {/* Tabs */}
-          <div className="flex gap-1 p-1 bg-slate-100 rounded-xl mb-6">
-            <button
-              onClick={() => { setMode('signin'); setError(null); }}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
-                mode === 'signin' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              Entrar
-            </button>
-            <button
-              onClick={() => { setMode('signup'); setError(null); }}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
-                mode === 'signup' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              Cadastrar
-            </button>
-          </div>
+          {(mode === 'signin' || mode === 'signup') && (
+            <div className="flex gap-1 p-1 bg-slate-100 rounded-xl mb-6">
+              <button
+                type="button"
+                onClick={() => switchMode('signin')}
+                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  mode === 'signin' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Entrar
+              </button>
+              <button
+                type="button"
+                onClick={() => switchMode('signup')}
+                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  mode === 'signup' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Cadastrar
+              </button>
+            </div>
+          )}
+
+          {mode === 'forgot' && (
+            <div className="mb-5">
+              <button
+                type="button"
+                onClick={() => switchMode('signin')}
+                className="flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-800 mb-3"
+              >
+                <ArrowLeft size={14} />
+                Voltar para o login
+              </button>
+              <h2 className="text-base font-semibold text-slate-900">Recuperar senha</h2>
+              <p className="text-xs text-slate-500 mt-1">
+                Digite seu e-mail para receber o link de redefinição.
+              </p>
+            </div>
+          )}
+
+          {mode === 'update-password' && (
+            <div className="mb-5">
+              <h2 className="text-base font-semibold text-slate-900">Criar nova senha</h2>
+              <p className="text-xs text-slate-500 mt-1">
+                Digite abaixo a nova senha da sua conta.
+              </p>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {mode === 'signup' && (
@@ -106,36 +203,78 @@ export default function AuthScreen() {
               </div>
             )}
 
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">E-mail</label>
-              <div className="relative">
-                <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="voce@email.com"
-                  className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 outline-none transition-all text-slate-900 placeholder-slate-400"
-                />
+            {mode !== 'update-password' && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">E-mail</label>
+                <div className="relative">
+                  <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="voce@email.com"
+                    className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 outline-none transition-all text-slate-900 placeholder-slate-400"
+                  />
+                </div>
               </div>
-            </div>
+            )}
 
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Senha</label>
-              <div className="relative">
-                <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••"
-                  className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 outline-none transition-all text-slate-900 placeholder-slate-400"
-                />
+            {mode !== 'forgot' && (
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-sm font-medium text-slate-700">
+                    {mode === 'update-password' ? 'Nova senha' : 'Senha'}
+                  </label>
+                  {mode === 'signin' && (
+                    <button
+                      type="button"
+                      onClick={() => switchMode('forgot')}
+                      className="text-xs text-slate-500 hover:text-slate-800 font-medium"
+                    >
+                      Esqueci minha senha
+                    </button>
+                  )}
+                </div>
+                <div className="relative">
+                  <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••"
+                    className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 outline-none transition-all text-slate-900 placeholder-slate-400"
+                  />
+                </div>
               </div>
-            </div>
+            )}
+
+            {mode === 'update-password' && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                  Confirmar nova senha
+                </label>
+                <div className="relative">
+                  <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="••••••"
+                    className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 outline-none transition-all text-slate-900 placeholder-slate-400"
+                  />
+                </div>
+              </div>
+            )}
 
             {error && (
               <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>
+            )}
+
+            {message && (
+              <div className="text-sm text-emerald-700 bg-emerald-50 px-3 py-2.5 rounded-lg flex items-start gap-2">
+                <CheckCircle2 size={16} className="shrink-0 mt-0.5" />
+                <span>{message}</span>
+              </div>
             )}
 
             <button
@@ -144,20 +283,29 @@ export default function AuthScreen() {
               className="w-full px-4 py-2.5 rounded-xl bg-slate-900 text-white font-medium hover:bg-slate-800 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {loading && <Loader2 size={16} className="animate-spin" />}
-              {mode === 'signin' ? 'Entrar' : 'Criar conta'}
+              {mode === 'signin'
+                ? 'Entrar'
+                : mode === 'signup'
+                  ? 'Criar conta'
+                  : mode === 'forgot'
+                    ? 'Enviar link de recuperação'
+                    : 'Salvar nova senha'}
             </button>
           </form>
         </div>
 
-        <p className="text-center text-xs text-slate-400 mt-6">
-          {mode === 'signin' ? 'Ainda não tem conta? ' : 'Já tem conta? '}
-          <button
-            onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(null); }}
-            className="text-slate-600 font-medium hover:text-slate-800"
-          >
-            {mode === 'signin' ? 'Cadastre-se' : 'Faça login'}
-          </button>
-        </p>
+        {(mode === 'signin' || mode === 'signup') && (
+          <p className="text-center text-xs text-slate-400 mt-6">
+            {mode === 'signin' ? 'Ainda não tem conta? ' : 'Já tem conta? '}
+            <button
+              type="button"
+              onClick={() => switchMode(mode === 'signin' ? 'signup' : 'signin')}
+              className="text-slate-600 font-medium hover:text-slate-800"
+            >
+              {mode === 'signin' ? 'Cadastre-se' : 'Faça login'}
+            </button>
+          </p>
+        )}
       </div>
     </div>
   );

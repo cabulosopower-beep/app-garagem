@@ -24,13 +24,19 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('garage');
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [isRecoveringPassword, setIsRecoveringPassword] = useState(() =>
+    window.location.hash.includes('type=recovery'),
+  );
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setAuthReady(true);
     });
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, newSession) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsRecoveringPassword(true);
+      }
       setSession(newSession);
     });
     return () => listener.subscription.unsubscribe();
@@ -89,11 +95,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (session) {
+    if (session && !isRecoveringPassword) {
       loadVehicles();
       loadAlerts();
     }
-  }, [loadVehicles, loadAlerts, session]);
+  }, [loadVehicles, loadAlerts, session, isRecoveringPassword]);
 
   async function handleSaveVehicle(
     data: Omit<Vehicle, 'id' | 'created_at'>,
@@ -126,8 +132,13 @@ export default function App() {
     );
   }
 
-  if (!session) {
-    return <AuthScreen />;
+  if (!session || isRecoveringPassword) {
+    return (
+      <AuthScreen
+        initialMode={isRecoveringPassword ? 'update-password' : 'signin'}
+        onPasswordUpdated={() => setIsRecoveringPassword(false)}
+      />
+    );
   }
 
   if (view.mode === 'detail') {

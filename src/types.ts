@@ -35,6 +35,7 @@ export interface Maintenance {
   date: string;
   odometer: number | null;
   cost: number | null;
+  title: string | null;
   description: string | null;
   category: MaintenanceCategory;
   receipt_url: string | null;

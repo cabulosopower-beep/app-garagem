@@ -1,3 +1,4 @@
+import InstallBanner from '@/components/InstallBanner';
 import { useEffect, useState, useCallback } from 'react';
 import { Plus, Car, Loader2, Wrench, TrendingUp, CalendarDays, Bell, LogOut, Settings } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -219,13 +220,16 @@ export default function App() {
 
   if (!session || isRecoveringPassword) {
     return (
-      <AuthScreen
-        initialMode={isRecoveringPassword ? 'update-password' : 'signin'}
-        onPasswordUpdated={() => {
-          recoveryDetectedAtBoot = false;
-          setIsRecoveringPassword(false);
-        }}
-      />
+      <>
+        <AuthScreen
+          initialMode={isRecoveringPassword ? 'update-password' : 'signin'}
+          onPasswordUpdated={() => {
+            recoveryDetectedAtBoot = false;
+            setIsRecoveringPassword(false);
+          }}
+        />
+        {!isRecoveringPassword && <InstallBanner />}
+      </>
     );
   }
 
@@ -399,6 +403,7 @@ export default function App() {
         onClose={() => goBackOr(() => setShowForm(false))}
         onSave={handleSaveVehicle}
       />
+     <InstallBanner />
     </div>
   );
 }

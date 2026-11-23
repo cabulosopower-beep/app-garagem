@@ -12,6 +12,8 @@ import {
   Loader2,
   Search,
   Package,
+  ChevronRight,
+  X,
 } from 'lucide-react';
 import { Vehicle, Maintenance, MAINTENANCE_CATEGORIES, MaintenanceCategory } from '@/types';
 import { supabase } from '@/lib/supabase';
@@ -37,6 +39,7 @@ type DetailNavState = {
   showVehForm: boolean;
   receiptPath: string | null;
   confirmDelete: boolean;
+  viewingMtnId: string | null;
 };
 
 const CATEGORY_STYLES: Record<MaintenanceCategory, string> = {
@@ -60,12 +63,20 @@ export default function VehicleDetail({ vehicle, onBack, onChanged }: VehicleDet
   const [showMtnForm, setShowMtnForm] = useState(false);
   const [showVehForm, setShowVehForm] = useState(false);
   const [editingMtn, setEditingMtn] = useState<Maintenance | null>(null);
+  const [viewingMtnId, setViewingMtnId] = useState<string | null>(null);
+  const [confirmDeleteMtn, setConfirmDeleteMtn] = useState(false);
   const [receiptPath, setReceiptPath] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [detailTab, setDetailTab] = useState<DetailTab>('maintenance');
   const [mtnSearch, setMtnSearch] = useState('');
 
+  const viewingMtn = useMemo(
+    () => maintenances.find((m) => m.id === viewingMtnId) ?? null,
+    [maintenances, viewingMtnId],
+  );
+
   const { url: photoUrl } = useSignedUrl(vehicle.photo_url);
+  const { url: viewingReceiptUrl } = useSignedUrl(viewingMtn?.receipt_url ?? null);
 
   useEffect(() => {
     loadMaintenances();
@@ -79,11 +90,15 @@ export default function VehicleDetail({ vehicle, onBack, onChanged }: VehicleDet
         setShowVehForm(Boolean(d.showVehForm));
         setReceiptPath(d.receiptPath ?? null);
         setConfirmDelete(Boolean(d.confirmDelete));
+        setViewingMtnId(d.viewingMtnId ?? null);
+        setConfirmDeleteMtn(false);
       } else {
         setShowMtnForm(false);
         setShowVehForm(false);
         setReceiptPath(null);
         setConfirmDelete(false);
+        setViewingMtnId(null);
+        setConfirmDeleteMtn(false);
       }
     }
 
@@ -97,12 +112,15 @@ export default function VehicleDetail({ vehicle, onBack, onChanged }: VehicleDet
       showVehForm: next.showVehForm ?? false,
       receiptPath: next.receiptPath ?? null,
       confirmDelete: next.confirmDelete ?? false,
+      viewingMtnId: next.viewingMtnId ?? null,
     };
 
     setShowMtnForm(nextState.showMtnForm);
     setShowVehForm(nextState.showVehForm);
     setReceiptPath(nextState.receiptPath);
     setConfirmDelete(nextState.confirmDelete);
+    setViewingMtnId(nextState.viewingMtnId);
+    setConfirmDeleteMtn(false);
 
     const currentDepth =
       typeof window.history.state?.depth === 'number' ? window.history.state.depth : 1;
@@ -144,6 +162,7 @@ export default function VehicleDetail({ vehicle, onBack, onChanged }: VehicleDet
     const q = mtnSearch.toLowerCase();
     return maintenances.filter(
       (m) =>
+        (m.title?.toLowerCase().includes(q) ?? false) ||
         (m.description?.toLowerCase().includes(q) ?? false) ||
         CATEGORY_LABEL[m.category].toLowerCase().includes(q),
     );
@@ -169,6 +188,10 @@ export default function VehicleDetail({ vehicle, onBack, onChanged }: VehicleDet
       if (m.receipt_url) await deleteStorageFile(m.receipt_url);
       await loadMaintenances();
       onChanged();
+      closeDetailModal(() => {
+        setViewingMtnId(null);
+        setConfirmDeleteMtn(false);
+      });
     }
   }
 
@@ -364,74 +387,234 @@ export default function VehicleDetail({ vehicle, onBack, onChanged }: VehicleDet
           ) : (
             <div className="space-y-3">
               {filteredMaintenances.map((m) => (
-                <div
+                <button
                   key={m.id}
-                  className="bg-white rounded-2xl border border-slate-200 p-4 hover:shadow-md shadow-slate-200/50 transition-shadow"
+                  type="button"
+                  onClick={() => pushDetailModal({ viewingMtnId: m.id })}
+                  className="w-full text-left bg-white rounded-2xl border border-slate-200 p-4 hover:shadow-md shadow-slate-200/50 transition-all active:scale-[0.99]"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                      <span
-                        className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${
-                          CATEGORY_STYLES[m.category]
-                        }`}
-                      >
-                        {CATEGORY_LABEL[m.category]}
-                      </span>
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-slate-800">
-                          {m.description || CATEGORY_LABEL[m.category]}
-                        </p>
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 text-xs text-slate-500">
-                          <span className="flex items-center gap-1">
-                            <Calendar size={12} />
-                            {formatDate(m.date)}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap ${
+                            CATEGORY_STYLES[m.category]
+                          }`}
+                        >
+                          {CATEGORY_LABEL[m.category]}
+                        </span>
+                        {m.receipt_url && (
+                          <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
+                            <Receipt size={12} />
+                            Recibo
                           </span>
-                          {m.odometer != null && (
-                            <span className="flex items-center gap-1">
-                              <Gauge size={12} />
-                              {formatOdometer(m.odometer)}
-                            </span>
-                          )}
-                          {m.cost != null && (
-                            <span className="flex items-center gap-1 font-semibold text-emerald-600">
-                              <Banknote size={12} />
-                              {formatCurrency(m.cost)}
-                            </span>
-                          )}
-                        </div>
+                        )}
+                      </div>
+
+                      <p className="text-sm font-semibold text-slate-800 truncate">
+                        {m.title || CATEGORY_LABEL[m.category]}
+                      </p>
+
+                      {m.description && (
+                        <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">
+                          {m.description}
+                        </p>
+                      )}
+
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-2 text-xs text-slate-500">
+                        <span className="flex items-center gap-1">
+                          <Calendar size={12} />
+                          {formatDate(m.date)}
+                        </span>
+                        {m.odometer != null && (
+                          <span className="flex items-center gap-1">
+                            <Gauge size={12} />
+                            {formatOdometer(m.odometer)}
+                          </span>
+                        )}
+                        {m.cost != null && (
+                          <span className="flex items-center gap-1 font-semibold text-emerald-600">
+                            <Banknote size={12} />
+                            {formatCurrency(m.cost)}
+                          </span>
+                        )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      {m.receipt_url && (
-                        <button
-                          onClick={() => pushDetailModal({ receiptPath: m.receipt_url })}
-                          className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors"
-                          title="Ver recibo"
-                        >
-                          <Receipt size={15} />
-                        </button>
-                      )}
-                      <button
-                        onClick={() => {
-                          setEditingMtn(m);
-                          pushDetailModal({ showMtnForm: true });
-                        }}
-                        className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors"
-                      >
-                        <Pencil size={15} />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteMtn(m)}
-                        className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-red-50 hover:text-red-500 text-slate-500 flex items-center justify-center transition-colors"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
+
+                    <ChevronRight size={18} className="text-slate-300 shrink-0" />
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Maintenance full detail modal */}
+      {viewingMtn && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div
+            className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
+            onClick={() => closeDetailModal(() => setViewingMtnId(null))}
+          />
+          <div className="relative w-full sm:max-w-lg bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[92vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white/95 backdrop-blur px-6 py-4 border-b border-slate-100 flex items-start justify-between gap-3 rounded-t-3xl z-10">
+              <div className="min-w-0">
+                <span
+                  className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium mb-1.5 ${
+                    CATEGORY_STYLES[viewingMtn.category]
+                  }`}
+                >
+                  {CATEGORY_LABEL[viewingMtn.category]}
+                </span>
+                <h2 className="text-lg font-bold text-slate-900 leading-snug">
+                  {viewingMtn.title || CATEGORY_LABEL[viewingMtn.category]}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => closeDetailModal(() => setViewingMtnId(null))}
+                className="w-9 h-9 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors shrink-0"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div className="grid grid-cols-3 gap-2.5">
+                <div className="bg-slate-50 rounded-xl p-3">
+                  <div className="flex items-center gap-1.5 text-slate-400 text-[11px] mb-1">
+                    <Calendar size={13} />
+                    Data
+                  </div>
+                  <p className="text-sm font-semibold text-slate-800">
+                    {formatDate(viewingMtn.date)}
+                  </p>
+                </div>
+
+                <div className="bg-slate-50 rounded-xl p-3">
+                  <div className="flex items-center gap-1.5 text-slate-400 text-[11px] mb-1">
+                    <Gauge size={13} />
+                    Quilometragem
+                  </div>
+                  <p className="text-sm font-semibold text-slate-800">
+                    {formatOdometer(viewingMtn.odometer)}
+                  </p>
+                </div>
+
+                <div className="bg-slate-50 rounded-xl p-3">
+                  <div className="flex items-center gap-1.5 text-slate-400 text-[11px] mb-1">
+                    <Banknote size={13} />
+                    Valor
+                  </div>
+                  <p className="text-sm font-semibold text-emerald-600">
+                    {viewingMtn.cost != null ? formatCurrency(viewingMtn.cost) : '—'}
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1.5">
+                  Descrição
+                </p>
+                <div className="bg-slate-50 rounded-xl p-3.5 text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
+                  {viewingMtn.description || 'Nenhuma descrição informada.'}
+                </div>
+              </div>
+
+              {viewingMtn.receipt_url && (
+                <div>
+                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1.5">
+                    Recibo
+                  </p>
+                  {viewingReceiptUrl ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        pushDetailModal({
+                          viewingMtnId: viewingMtn.id,
+                          receiptPath: viewingMtn.receipt_url,
+                        })
+                      }
+                      className="w-full rounded-2xl overflow-hidden border border-slate-200 bg-slate-50 hover:opacity-95 transition-opacity"
+                    >
+                      <img
+                        src={viewingReceiptUrl}
+                        alt="Recibo"
+                        className="w-full max-h-60 object-contain"
+                      />
+                      <span className="block text-xs text-slate-500 py-2 border-t border-slate-100 bg-white">
+                        Toque para ampliar
+                      </span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        pushDetailModal({
+                          viewingMtnId: viewingMtn.id,
+                          receiptPath: viewingMtn.receipt_url,
+                        })
+                      }
+                      className="w-full py-3 rounded-xl border border-slate-200 text-sm font-medium text-slate-700 flex items-center justify-center gap-2 hover:bg-slate-50"
+                    >
+                      <Receipt size={16} />
+                      Ver recibo
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {confirmDeleteMtn ? (
+                <div className="bg-red-50 border border-red-100 rounded-2xl p-4">
+                  <p className="text-sm font-medium text-red-800 mb-3">
+                    Tem certeza que deseja excluir esta manutenção?
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteMtn(false)}
+                      className="flex-1 px-4 py-2 rounded-xl bg-white border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteMtn(viewingMtn)}
+                      className="flex-1 px-4 py-2 rounded-xl bg-red-500 text-white text-sm font-medium hover:bg-red-600"
+                    >
+                      Sim, excluir
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-3 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDeleteMtn(true)}
+                    className="px-4 py-2.5 rounded-xl border border-red-200 text-red-600 text-sm font-medium hover:bg-red-50 transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <Trash2 size={16} />
+                    Excluir
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingMtn(viewingMtn);
+                      pushDetailModal({
+                        viewingMtnId: viewingMtn.id,
+                        showMtnForm: true,
+                      });
+                    }}
+                    className="flex-1 px-4 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <Pencil size={16} />
+                    Editar
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

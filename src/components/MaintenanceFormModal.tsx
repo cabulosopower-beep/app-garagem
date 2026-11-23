@@ -25,6 +25,7 @@ export default function MaintenanceFormModal({
   const [date, setDate] = useState('');
   const [odometer, setOdometer] = useState('');
   const [cost, setCost] = useState('');
+  const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<MaintenanceCategory>('oleo');
   const [receiptPath, setReceiptPath] = useState<string | null>(null);
@@ -40,6 +41,7 @@ export default function MaintenanceFormModal({
       setDate(maintenance?.date ?? new Date().toISOString().slice(0, 10));
       setOdometer(maintenance?.odometer?.toString() ?? '');
       setCost(maintenance?.cost?.toString() ?? '');
+      setTitle(maintenance?.title ?? '');
       setDescription(maintenance?.description ?? '');
       setCategory(maintenance?.category ?? 'oleo');
       setReceiptPath(maintenance?.receipt_url ?? null);
@@ -78,6 +80,7 @@ export default function MaintenanceFormModal({
           date,
           odometer: odometer ? parseInt(odometer) : null,
           cost: cost ? parseFloat(cost) : null,
+          title: title.trim() || null,
           description: description.trim() || null,
           category,
           receipt_url: receiptPath,
@@ -136,6 +139,16 @@ export default function MaintenanceFormModal({
             </div>
           </div>
 
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">Título</label>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Ex: Troca de óleo e filtro"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 outline-none transition-all text-slate-900 placeholder-slate-400"
+            />
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1.5">Data *</label>
@@ -179,7 +192,7 @@ export default function MaintenanceFormModal({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
-              placeholder="Troca de óleo sintético 5W-30 + filtro de óleo"
+              placeholder="Detalhes do serviço, peças trocadas, oficina..."
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 outline-none transition-all text-slate-900 placeholder-slate-400 resize-none"
             />
           </div>

@@ -20,7 +20,7 @@ import { supabase } from '@/lib/supabase';
 import { formatCurrency, formatDate, formatOdometer } from '@/lib/format';
 import { useSignedUrl } from '@/lib/useSignedUrl';
 import { deleteStorageFile } from '@/lib/upload';
-import MaintenanceFormModal from './MaintenanceFormModal';
+import MaintenanceFormModal, { MaintenanceReminderInput } from './MaintenanceFormModal';
 import VehicleFormModal from './VehicleFormModal';
 import ReceiptViewer from './ReceiptViewer';
 import PartsSection from './PartsSection';
@@ -69,6 +69,7 @@ export default function VehicleDetail({ vehicle, onBack, onChanged }: VehicleDet
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [detailTab, setDetailTab] = useState<DetailTab>('maintenance');
   const [mtnSearch, setMtnSearch] = useState('');
+  const [periodFilter, setPeriodFilter] = useState<string>('all');
 
   const viewingMtn = useMemo(
     () => maintenances.find((m) => m.id === viewingMtnId) ?? null,
@@ -154,21 +155,52 @@ export default function VehicleDetail({ vehicle, onBack, onChanged }: VehicleDet
     setLoading(false);
   }
 
+  const now = new Date();
+  const currentYear = String(now.getFullYear());
+  const currentMonthPrefix = `${currentYear}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
   const totalSpent = maintenances.reduce((sum, m) => sum + (m.cost ?? 0), 0);
+  const spentThisYear = maintenances
+    .filter((m) => m.date.startsWith(currentYear))
+    .reduce((sum, m) => sum + (m.cost ?? 0), 0);
   const lastMtn = maintenances[0];
 
+  const availableYears = useMemo(() => {
+    const years = new Set<string>();
+    maintenances.forEach((m) => {
+      if (m.date.length >= 4) years.add(m.date.slice(0, 4));
+    });
+    return Array.from(years).sort((a, b) => b.localeCompare(a));
+  }, [maintenances]);
+
   const filteredMaintenances = useMemo(() => {
-    if (!mtnSearch.trim()) return maintenances;
-    const q = mtnSearch.toLowerCase();
-    return maintenances.filter(
-      (m) =>
+    return maintenances.filter((m) => {
+      if (periodFilter === 'month' && !m.date.startsWith(currentMonthPrefix)) {
+        return false;
+      }
+      if (periodFilter !== 'all' && periodFilter !== 'month' && !m.date.startsWith(periodFilter)) {
+        return false;
+      }
+      if (!mtnSearch.trim()) return true;
+      const q = mtnSearch.toLowerCase();
+      return (
         (m.title?.toLowerCase().includes(q) ?? false) ||
         (m.description?.toLowerCase().includes(q) ?? false) ||
-        CATEGORY_LABEL[m.category].toLowerCase().includes(q),
-    );
-  }, [maintenances, mtnSearch]);
+        CATEGORY_LABEL[m.category].toLowerCase().includes(q)
+      );
+    });
+  }, [maintenances, mtnSearch, periodFilter, currentMonthPrefix]);
 
-  async function handleSaveMtn(data: Omit<Maintenance, 'id' | 'created_at' | 'vehicle_id'>, id?: string) {
+  const filteredTotal = useMemo(
+    () => filteredMaintenances.reduce((sum, m) => sum + (m.cost ?? 0), 0),
+    [filteredMaintenances],
+  );
+
+  async function handleSaveMtn(
+    data: Omit<Maintenance, 'id' | 'created_at' | 'vehicle_id'>,
+    id?: string,
+    reminder?: MaintenanceReminderInput,
+  ) {
     if (id) {
       const { error } = await supabase.from('maintenances').update(data).eq('id', id);
       if (error) throw error;
@@ -178,6 +210,17 @@ export default function VehicleDetail({ vehicle, onBack, onChanged }: VehicleDet
         .insert({ ...data, vehicle_id: vehicle.id });
       if (error) throw error;
     }
+
+    if (reminder) {
+      await supabase.from('alerts').insert({
+        title: reminder.title,
+        description: reminder.description,
+        alert_date: reminder.alert_date,
+        alert_time: '09:00',
+        vehicle_id: vehicle.id,
+      });
+    }
+
     await loadMaintenances();
     onChanged();
   }
@@ -270,6 +313,9 @@ export default function VehicleDetail({ vehicle, onBack, onChanged }: VehicleDet
             </div>
             <p className="text-[11px] text-slate-400 leading-none">Total gasto</p>
             <p className="text-sm font-bold text-slate-800 mt-1">{formatCurrency(totalSpent)}</p>
+            <p className="text-[10px] text-slate-400 mt-0.5">
+              {currentYear}: {formatCurrency(spentThisYear)}
+            </p>
           </div>
           <div className="text-center border-x border-slate-100">
             <div className="w-10 h-10 mx-auto rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 mb-1.5">
@@ -339,16 +385,69 @@ export default function VehicleDetail({ vehicle, onBack, onChanged }: VehicleDet
             </button>
           </div>
 
-          {/* Search */}
+          {/* Search & Period filter */}
           {maintenances.length > 0 && (
-            <div className="relative mb-4">
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-              <input
-                value={mtnSearch}
-                onChange={(e) => setMtnSearch(e.target.value)}
-                placeholder="Buscar manutenção…"
-                className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 outline-none transition-all text-slate-900 placeholder-slate-400 text-sm"
-              />
+            <div className="space-y-3 mb-4">
+              <div className="relative">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <input
+                  value={mtnSearch}
+                  onChange={(e) => setMtnSearch(e.target.value)}
+                  placeholder="Buscar manutenção…"
+                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 outline-none transition-all text-slate-900 placeholder-slate-400 text-sm"
+                />
+              </div>
+
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                <button
+                  type="button"
+                  onClick={() => setPeriodFilter('all')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-colors ${
+                    periodFilter === 'all'
+                      ? 'bg-slate-900 text-white'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  Tudo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPeriodFilter('month')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-colors ${
+                    periodFilter === 'month'
+                      ? 'bg-slate-900 text-white'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  Este mês
+                </button>
+                {availableYears.map((yr) => (
+                  <button
+                    key={yr}
+                    type="button"
+                    onClick={() => setPeriodFilter(yr)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-colors ${
+                      periodFilter === yr
+                        ? 'bg-slate-900 text-white'
+                        : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    {yr}
+                  </button>
+                ))}
+              </div>
+
+              {(periodFilter !== 'all' || mtnSearch.trim()) && (
+                <div className="flex items-center justify-between bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs">
+                  <span className="text-slate-500">
+                    {filteredMaintenances.length}{' '}
+                    {filteredMaintenances.length === 1 ? 'serviço' : 'serviços'} no filtro
+                  </span>
+                  <span className="font-semibold text-emerald-600">
+                    {formatCurrency(filteredTotal)}
+                  </span>
+                </div>
+              )}
             </div>
           )}
 
@@ -358,11 +457,11 @@ export default function VehicleDetail({ vehicle, onBack, onChanged }: VehicleDet
             </div>
           ) : filteredMaintenances.length === 0 ? (
             <div className="bg-white rounded-2xl border border-slate-100">
-              {mtnSearch.trim() ? (
+              {mtnSearch.trim() || periodFilter !== 'all' ? (
                 <EmptyState
                   icon={<Wrench size={28} />}
                   title="Nenhuma manutenção encontrada"
-                  description="Tente outro termo de busca."
+                  description="Tente outro período ou termo de busca."
                 />
               ) : (
                 <EmptyState

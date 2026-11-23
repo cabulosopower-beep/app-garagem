@@ -15,6 +15,7 @@ export default function PartsSection({ vehicleId }: PartsSectionProps) {
   const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingPart, setEditingPart] = useState<Part | null>(null);
+  const [confirmDeletePart, setConfirmDeletePart] = useState<Part | null>(null);
 
   useEffect(() => {
     loadParts();
@@ -56,7 +57,10 @@ export default function PartsSection({ vehicleId }: PartsSectionProps) {
 
   async function handleDelete(id: string) {
     const { error } = await supabase.from('parts').delete().eq('id', id);
-    if (!error) await loadParts();
+    if (!error) {
+      setConfirmDeletePart(null);
+      await loadParts();
+    }
   }
 
   return (
@@ -148,7 +152,7 @@ export default function PartsSection({ vehicleId }: PartsSectionProps) {
                     <Pencil size={15} />
                   </button>
                   <button
-                    onClick={() => handleDelete(p.id)}
+                    onClick={() => setConfirmDeletePart(p)}
                     className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-red-50 hover:text-red-500 text-slate-500 flex items-center justify-center transition-colors"
                   >
                     <Trash2 size={15} />
@@ -157,6 +161,40 @@ export default function PartsSection({ vehicleId }: PartsSectionProps) {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {confirmDeletePart && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
+            onClick={() => setConfirmDeletePart(null)}
+          />
+          <div className="relative bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full">
+            <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center text-red-500 mb-4">
+              <Trash2 size={22} />
+            </div>
+            <h3 className="text-lg font-semibold text-slate-900">Excluir peça?</h3>
+            <p className="text-sm text-slate-500 mt-1">
+              Tem certeza que deseja excluir <strong>{confirmDeletePart.name}</strong>? Esta ação não pode ser desfeita.
+            </p>
+            <div className="flex gap-3 mt-6">
+              <button
+                type="button"
+                onClick={() => setConfirmDeletePart(null)}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-medium hover:bg-slate-50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDelete(confirmDeletePart.id)}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-red-500 text-white font-medium hover:bg-red-600 transition-colors"
+              >
+                Excluir
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

@@ -1,8 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Loader2, Receipt, Trash2 } from 'lucide-react';
+import { X, Loader2, Receipt, Trash2, Bell } from 'lucide-react';
 import { Maintenance, MaintenanceCategory, MAINTENANCE_CATEGORIES, Vehicle } from '@/types';
 import { uploadImage, UploadError } from '@/lib/upload';
 import { useSignedUrl } from '@/lib/useSignedUrl';
+
+export interface MaintenanceReminderInput {
+  title: string;
+  alert_date: string;
+  description: string | null;
+}
 
 interface MaintenanceFormModalProps {
   open: boolean;
@@ -10,9 +16,28 @@ interface MaintenanceFormModalProps {
   onSave: (
     data: Omit<Maintenance, 'id' | 'created_at' | 'vehicle_id'>,
     id?: string,
+    reminder?: MaintenanceReminderInput,
   ) => Promise<void>;
   vehicle: Vehicle | null;
   maintenance?: Maintenance | null;
+}
+
+const CATEGORY_LABEL: Record<MaintenanceCategory, string> = MAINTENANCE_CATEGORIES.reduce(
+  (acc, c) => ({ ...acc, [c.value]: c.label }),
+  {} as Record<MaintenanceCategory, string>,
+);
+
+function addMonthsISO(isoDate: string, months: number): string {
+  const [y, m, d] = isoDate.split('-').map(Number);
+  const target = new Date(y, m - 1 + months, d);
+  const expectedMonth = (((m - 1 + months) % 12) + 12) % 12;
+  if (target.getMonth() !== expectedMonth) {
+    target.setDate(0);
+  }
+  const yy = target.getFullYear();
+  const mm = String(target.getMonth() + 1).padStart(2, '0');
+  const dd = String(target.getDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
 }
 
 export default function MaintenanceFormModal({
@@ -29,6 +54,10 @@ export default function MaintenanceFormModal({
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<MaintenanceCategory>('oleo');
   const [receiptPath, setReceiptPath] = useState<string | null>(null);
+  const [createReminder, setCreateReminder] = useState(false);
+  const [reminderMonths, setReminderMonths] = useState<number | null>(6);
+  const [reminderDate, setReminderDate] = useState('');
+  const [reminderOdometer, setReminderOdometer] = useState('');
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,18 +67,30 @@ export default function MaintenanceFormModal({
 
   useEffect(() => {
     if (open) {
-      setDate(maintenance?.date ?? new Date().toISOString().slice(0, 10));
+      const baseDate = maintenance?.date ?? new Date().toISOString().slice(0, 10);
+      setDate(baseDate);
       setOdometer(maintenance?.odometer?.toString() ?? '');
       setCost(maintenance?.cost?.toString() ?? '');
       setTitle(maintenance?.title ?? '');
       setDescription(maintenance?.description ?? '');
       setCategory(maintenance?.category ?? 'oleo');
       setReceiptPath(maintenance?.receipt_url ?? null);
+      setCreateReminder(false);
+      setReminderMonths(6);
+      setReminderDate(addMonthsISO(baseDate, 6));
+      setReminderOdometer('');
       setError(null);
     }
   }, [open, maintenance]);
 
   if (!open || !vehicle) return null;
+
+  function handleSelectReminderMonths(months: number) {
+    setReminderMonths(months);
+    if (date) {
+      setReminderDate(addMonthsISO(date, months));
+    }
+  }
 
   async function handleReceipt(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -72,9 +113,23 @@ export default function MaintenanceFormModal({
       setError('A data é obrigatória.');
       return;
     }
+    if (createReminder && !reminderDate) {
+      setError('Escolha a data do lembrete.');
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
+      const reminderPayload: MaintenanceReminderInput | undefined = createReminder
+        ? {
+            title: `Próxima: ${title.trim() || CATEGORY_LABEL[category]}`,
+            alert_date: reminderDate,
+            description: reminderOdometer
+              ? `Meta de quilometragem: ${parseInt(reminderOdometer).toLocaleString('pt-BR')} km`
+              : description.trim() || null,
+          }
+        : undefined;
+
       await onSave(
         {
           date,
@@ -86,6 +141,7 @@ export default function MaintenanceFormModal({
           receipt_url: receiptPath,
         },
         maintenance?.id,
+        reminderPayload,
       );
       onClose();
     } catch {
@@ -155,7 +211,13 @@ export default function MaintenanceFormModal({
               <input
                 type="date"
                 value={date}
-                onChange={(e) => setDate(e.target.value)}
+                onChange={(e) => {
+                  const newDate = e.target.value;
+                  setDate(newDate);
+                  if (newDate && reminderMonths) {
+                    setReminderDate(addMonthsISO(newDate, reminderMonths));
+                  }
+                }}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 outline-none transition-all text-slate-900"
               />
             </div>
@@ -195,6 +257,75 @@ export default function MaintenanceFormModal({
               placeholder="Detalhes do serviço, peças trocadas, oficina..."
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 outline-none transition-all text-slate-900 placeholder-slate-400 resize-none"
             />
+          </div>
+
+          {/* Shortcut: Next maintenance reminder */}
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
+            <label className="flex items-center gap-2.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={createReminder}
+                onChange={(e) => setCreateReminder(e.target.checked)}
+                className="w-4 h-4 rounded accent-slate-900"
+              />
+              <Bell size={16} className="text-slate-600" />
+              <span className="text-sm font-medium text-slate-800">
+                Criar lembrete para a próxima troca/revisão
+              </span>
+            </label>
+
+            {createReminder && (
+              <div className="mt-4 space-y-3 pt-3 border-t border-slate-200">
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { label: '3 meses', months: 3 },
+                    { label: '6 meses', months: 6 },
+                    { label: '1 ano', months: 12 },
+                  ].map((opt) => (
+                    <button
+                      key={opt.months}
+                      type="button"
+                      onClick={() => handleSelectReminderMonths(opt.months)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                        reminderMonths === opt.months
+                          ? 'bg-slate-900 text-white'
+                          : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Data do alerta
+                    </label>
+                    <input
+                      type="date"
+                      value={reminderDate}
+                      onChange={(e) => {
+                        setReminderMonths(null);
+                        setReminderDate(e.target.value);
+                      }}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-slate-900 outline-none focus:border-slate-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      KM previsto (opcional)
+                    </label>
+                    <input
+                      value={reminderOdometer}
+                      onChange={(e) => setReminderOdometer(e.target.value.replace(/\D/g, ''))}
+                      placeholder="60000"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-slate-900 placeholder-slate-400 outline-none focus:border-slate-400"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Receipt photo */}

@@ -1,4 +1,3 @@
-import InstallBanner from '@/components/InstallBanner';
 import { useEffect, useState, useCallback } from 'react';
 import { Plus, Car, Loader2, Wrench, TrendingUp, CalendarDays, Bell, LogOut, Settings } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -11,6 +10,7 @@ import CalendarView from '@/components/CalendarView';
 import SettingsView from '@/components/SettingsView';
 import EmptyState from '@/components/EmptyState';
 import AuthScreen from '@/components/AuthScreen';
+import InstallBanner from '@/components/InstallBanner';
 import type { Session } from '@supabase/supabase-js';
 
 type View = { mode: 'list' } | { mode: 'detail'; vehicleId: string };
@@ -29,6 +29,8 @@ supabase.auth.onAuthStateChange((event) => {
 export default function App() {
   const [vehicles, setVehicles] = useState<VehicleWithStats[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [spentThisYear, setSpentThisYear] = useState(0);
+  const [spentThisMonth, setSpentThisMonth] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [view, setView] = useState<View>({ mode: 'list' });
@@ -130,6 +132,8 @@ export default function App() {
     await supabase.auth.signOut();
     setVehicles([]);
     setAlerts([]);
+    setSpentThisYear(0);
+    setSpentThisMonth(0);
     setTab('garage');
     setView({ mode: 'list' });
     setShowForm(false);
@@ -155,8 +159,24 @@ export default function App() {
       return;
     }
 
+    const now = new Date();
+    const yearPrefix = String(now.getFullYear());
+    const monthPrefix = `${yearPrefix}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    const allMtns = mtns as Maintenance[];
+    setSpentThisYear(
+      allMtns
+        .filter((m) => m.date.startsWith(yearPrefix))
+        .reduce((s, m) => s + (m.cost ?? 0), 0),
+    );
+    setSpentThisMonth(
+      allMtns
+        .filter((m) => m.date.startsWith(monthPrefix))
+        .reduce((s, m) => s + (m.cost ?? 0), 0),
+    );
+
     const withStats: VehicleWithStats[] = (vehs as Vehicle[]).map((v) => {
-      const vMtns = (mtns as Maintenance[]).filter((m) => m.vehicle_id === v.id);
+      const vMtns = allMtns.filter((m) => m.vehicle_id === v.id);
       const totalSpent = vMtns.reduce((s, m) => s + (m.cost ?? 0), 0);
       const last = vMtns[0];
       return {
@@ -243,7 +263,10 @@ export default function App() {
         <VehicleDetail
           vehicle={vehicle}
           onBack={() => goBackOr(() => setView({ mode: 'list' }))}
-          onChanged={loadVehicles}
+          onChanged={() => {
+            loadVehicles();
+            loadAlerts();
+          }}
         />
       );
     }
@@ -359,6 +382,9 @@ export default function App() {
                   <span className="text-xs font-medium">Total investido</span>
                 </div>
                 <p className="text-xl font-bold text-emerald-600">{formatCurrency(totalSpentAll)}</p>
+                <p className="text-[11px] text-slate-400 mt-1 leading-tight">
+                  {new Date().getFullYear()}: {formatCurrency(spentThisYear)} · Mês: {formatCurrency(spentThisMonth)}
+                </p>
               </div>
             </div>
           )}
@@ -403,7 +429,7 @@ export default function App() {
         onClose={() => goBackOr(() => setShowForm(false))}
         onSave={handleSaveVehicle}
       />
-     <InstallBanner />
+      <InstallBanner />
     </div>
   );
 }

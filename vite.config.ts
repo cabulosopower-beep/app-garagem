@@ -9,7 +9,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'favicon-32.png', 'favicon-16.png', 'apple-touch-icon.png'],
+      includeAssets: ['favicon-32.png', 'favicon-16.png', 'apple-touch-icon.png'],
       manifest: {
         name: 'Garagem - Controle de Manutenção',
         short_name: 'Garagem',

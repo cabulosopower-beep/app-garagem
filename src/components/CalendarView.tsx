@@ -14,7 +14,6 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Alert, Vehicle } from '@/types';
-import { formatMonthYear } from '@/lib/format';
 import AlertFormModal from './AlertFormModal';
 import EmptyState from './EmptyState';
 
@@ -54,6 +53,7 @@ export default function CalendarView({ vehicles }: CalendarViewProps) {
   const [selectedDate, setSelectedDate] = useState<string>(() => toISODate(new Date()));
   const [showForm, setShowForm] = useState(false);
   const [editingAlert, setEditingAlert] = useState<Alert | null>(null);
+  const [confirmDeleteAlert, setConfirmDeleteAlert] = useState<Alert | null>(null);
   const [permission, setPermission] = useState<NotificationPermission>('default');
 
   const loadAlerts = useCallback(async () => {
@@ -155,7 +155,10 @@ export default function CalendarView({ vehicles }: CalendarViewProps) {
 
   async function handleDeleteAlert(id: string) {
     const { error } = await supabase.from('alerts').delete().eq('id', id);
-    if (!error) await loadAlerts();
+    if (!error) {
+      setConfirmDeleteAlert(null);
+      await loadAlerts();
+    }
   }
 
   async function toggleDone(alert: Alert) {
@@ -450,7 +453,7 @@ export default function CalendarView({ vehicles }: CalendarViewProps) {
                           <Pencil size={13} />
                         </button>
                         <button
-                          onClick={() => handleDeleteAlert(a.id)}
+                          onClick={() => setConfirmDeleteAlert(a)}
                           className="w-7 h-7 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 flex items-center justify-center transition-colors"
                         >
                           <Trash2 size={13} />
@@ -464,6 +467,40 @@ export default function CalendarView({ vehicles }: CalendarViewProps) {
           )}
         </div>
       </div>
+
+      {confirmDeleteAlert && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
+            onClick={() => setConfirmDeleteAlert(null)}
+          />
+          <div className="relative bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full">
+            <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center text-red-500 mb-4">
+              <Trash2 size={22} />
+            </div>
+            <h3 className="text-lg font-semibold text-slate-900">Excluir alerta?</h3>
+            <p className="text-sm text-slate-500 mt-1">
+              Tem certeza que deseja excluir <strong>{confirmDeleteAlert.title}</strong>? Esta ação não pode ser desfeita.
+            </p>
+            <div className="flex gap-3 mt-6">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteAlert(null)}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-medium hover:bg-slate-50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDeleteAlert(confirmDeleteAlert.id)}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-red-500 text-white font-medium hover:bg-red-600 transition-colors"
+              >
+                Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <AlertFormModal
         open={showForm}

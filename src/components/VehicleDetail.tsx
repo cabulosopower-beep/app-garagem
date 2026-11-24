@@ -239,9 +239,24 @@ export default function VehicleDetail({ vehicle, onBack, onChanged }: VehicleDet
   }
 
   async function handleDeleteVehicle() {
+    const pathsToDelete: string[] = [];
+    if (vehicle.photo_url) pathsToDelete.push(vehicle.photo_url);
+
+    const { data: mtnReceipts } = await supabase
+      .from('maintenances')
+      .select('receipt_url')
+      .eq('vehicle_id', vehicle.id)
+      .not('receipt_url', 'is', null);
+
+    if (mtnReceipts) {
+      mtnReceipts.forEach((r) => {
+        if (r.receipt_url) pathsToDelete.push(r.receipt_url);
+      });
+    }
+
     const { error } = await supabase.from('vehicles').delete().eq('id', vehicle.id);
     if (!error) {
-      if (vehicle.photo_url) await deleteStorageFile(vehicle.photo_url);
+      await Promise.all(pathsToDelete.map((p) => deleteStorageFile(p)));
       onChanged();
       if (window.history.state?.detailNav) {
         window.history.go(-2);
@@ -664,12 +679,17 @@ export default function VehicleDetail({ vehicle, onBack, onChanged }: VehicleDet
                 </div>
               )}
 
-              {confirmDeleteMtn ? (
+{confirmDeleteMtn ? (
                 <div className="bg-red-50 border border-red-100 rounded-2xl p-4">
-                  <p className="text-sm font-medium text-red-800 mb-3">
+                  <p className="text-sm font-medium text-red-800">
                     Tem certeza que deseja excluir esta manutenção?
                   </p>
-                  <div className="flex gap-2">
+                  {viewingMtn.receipt_url && (
+                    <p className="text-xs text-red-600 mt-1">
+                      A foto do recibo também será excluída permanentemente e não poderá ser restaurada.
+                    </p>
+                  )}
+                  <div className="flex gap-2 mt-3">
                     <button
                       type="button"
                       onClick={() => setConfirmDeleteMtn(false)}
@@ -730,8 +750,7 @@ export default function VehicleDetail({ vehicle, onBack, onChanged }: VehicleDet
             </div>
             <h3 className="text-lg font-semibold text-slate-900">Excluir veículo?</h3>
             <p className="text-sm text-slate-500 mt-1">
-              Todas as manutenções e peças registradas deste veículo também serão removidas. Esta ação não
-              pode ser desfeita.
+              Todas as manutenções, peças, fotos e recibos deste veículo também serão excluídos permanentemente e não poderão ser restaurados.
             </p>
             <div className="flex gap-3 mt-6">
               <button

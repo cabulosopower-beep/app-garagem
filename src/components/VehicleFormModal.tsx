@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Upload, Loader2, Car } from 'lucide-react';
+import { X, Upload, Loader2, Car, Trash2 } from 'lucide-react';
 import { Vehicle } from '@/types';
-import { uploadImage, UploadError } from '@/lib/upload';
+import { uploadImage, deleteStorageFile, UploadError } from '@/lib/upload';
 import { useSignedUrl } from '@/lib/useSignedUrl';
 
 interface VehicleFormModalProps {
@@ -33,22 +33,34 @@ export default function VehicleFormModal({ open, onClose, onSave, vehicle }: Veh
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const initialPhotoRef = useRef<string | null>(null);
+  const pendingUploadsRef = useRef<string[]>([]);
 
   const { url: previewUrl } = useSignedUrl(photoPath);
 
   useEffect(() => {
     if (open) {
+      const initial = vehicle?.photo_url ?? null;
+      initialPhotoRef.current = initial;
+      pendingUploadsRef.current = [];
       setBrand(vehicle?.brand ?? '');
       setModel(vehicle?.model ?? '');
       setYear(vehicle?.year?.toString() ?? '');
       setPlate(vehicle?.plate ?? '');
       setColor(vehicle?.color ?? '');
-      setPhotoPath(vehicle?.photo_url ?? null);
+      setPhotoPath(initial);
       setError(null);
     }
   }, [open, vehicle]);
 
   if (!open) return null;
+
+  async function handleClose() {
+    const unused = pendingUploadsRef.current.filter((p) => p !== initialPhotoRef.current);
+    pendingUploadsRef.current = [];
+    await Promise.all(unused.map((p) => deleteStorageFile(p)));
+    onClose();
+  }
 
   async function handlePhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -57,6 +69,7 @@ export default function VehicleFormModal({ open, onClose, onSave, vehicle }: Veh
     setError(null);
     try {
       const path = await uploadImage(file, 'vehicles');
+      pendingUploadsRef.current.push(path);
       setPhotoPath(path);
     } catch (err) {
       setError(err instanceof UploadError ? err.message : 'Não foi possível enviar a foto.');
@@ -85,6 +98,17 @@ export default function VehicleFormModal({ open, onClose, onSave, vehicle }: Veh
         },
         vehicle?.id,
       );
+
+      const toDelete = new Set<string>();
+      if (initialPhotoRef.current && photoPath !== initialPhotoRef.current) {
+        toDelete.add(initialPhotoRef.current);
+      }
+      pendingUploadsRef.current.forEach((p) => {
+        if (p !== photoPath) toDelete.add(p);
+      });
+      pendingUploadsRef.current = [];
+      await Promise.all(Array.from(toDelete).map((p) => deleteStorageFile(p)));
+
       onClose();
     } catch {
       setError('Erro ao salvar veículo.');
@@ -93,16 +117,20 @@ export default function VehicleFormModal({ open, onClose, onSave, vehicle }: Veh
     }
   }
 
+  const photoWillBeDeleted =
+    Boolean(initialPhotoRef.current) && photoPath !== initialPhotoRef.current;
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={handleClose} />
       <div className="relative w-full sm:max-w-lg bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[92vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white/95 backdrop-blur px-6 py-4 border-b border-slate-100 flex items-center justify-between rounded-t-3xl">
+        <div className="sticky top-0 bg-white/95 backdrop-blur px-6 py-4 border-b border-slate-100 flex items-center justify-between rounded-t-3xl z-10">
           <h2 className="text-lg font-semibold text-slate-900">
             {vehicle ? 'Editar veículo' : 'Novo veículo'}
           </h2>
           <button
-            onClick={onClose}
+            type="button"
+            onClick={handleClose}
             className="w-9 h-9 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
           >
             <X size={20} />
@@ -112,22 +140,34 @@ export default function VehicleFormModal({ open, onClose, onSave, vehicle }: Veh
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
           {/* Photo */}
           <div className="flex flex-col items-center">
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              className="relative w-28 h-28 rounded-2xl overflow-hidden bg-slate-100 border-2 border-dashed border-slate-300 hover:border-slate-400 transition-colors flex items-center justify-center group"
-            >
-              {previewUrl ? (
-                <img src={previewUrl} alt="Veículo" className="w-full h-full object-cover" />
-              ) : uploading ? (
-                <Loader2 className="animate-spin text-slate-400" size={28} />
-              ) : (
-                <div className="flex flex-col items-center text-slate-400 group-hover:text-slate-500">
-                  <Car size={32} />
-                  <Upload size={16} className="mt-1" />
-                </div>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                className="relative w-28 h-28 rounded-2xl overflow-hidden bg-slate-100 border-2 border-dashed border-slate-300 hover:border-slate-400 transition-colors flex items-center justify-center group"
+              >
+                {previewUrl ? (
+                  <img src={previewUrl} alt="Veículo" className="w-full h-full object-cover" />
+                ) : uploading ? (
+                  <Loader2 className="animate-spin text-slate-400" size={28} />
+                ) : (
+                  <div className="flex flex-col items-center text-slate-400 group-hover:text-slate-500">
+                    <Car size={32} />
+                    <Upload size={16} className="mt-1" />
+                  </div>
+                )}
+              </button>
+              {photoPath && (
+                <button
+                  type="button"
+                  onClick={() => setPhotoPath(null)}
+                  title="Remover foto"
+                  className="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center text-red-500 hover:bg-red-50 transition-colors"
+                >
+                  <Trash2 size={14} />
+                </button>
               )}
-            </button>
+            </div>
             <input
               ref={fileRef}
               type="file"
@@ -136,6 +176,11 @@ export default function VehicleFormModal({ open, onClose, onSave, vehicle }: Veh
               onChange={handlePhoto}
             />
             <p className="text-xs text-slate-400 mt-2">Foto do veículo (opcional, máx. 5 MB)</p>
+            {photoWillBeDeleted && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 mt-2 text-center">
+                Atenção: ao salvar, a foto anterior será excluída permanentemente e não poderá ser restaurada.
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -211,7 +256,7 @@ export default function VehicleFormModal({ open, onClose, onSave, vehicle }: Veh
           <div className="flex gap-3 pt-2">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-medium hover:bg-slate-50 transition-colors"
             >
               Cancelar

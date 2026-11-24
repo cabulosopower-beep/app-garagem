@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, Loader2, Receipt, Trash2, Bell } from 'lucide-react';
 import { Maintenance, MaintenanceCategory, MAINTENANCE_CATEGORIES, Vehicle } from '@/types';
-import { uploadImage, UploadError } from '@/lib/upload';
+import { uploadImage, deleteStorageFile, UploadError } from '@/lib/upload';
 import { useSignedUrl } from '@/lib/useSignedUrl';
 
 export interface MaintenanceReminderInput {
@@ -62,19 +62,24 @@ export default function MaintenanceFormModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const initialReceiptRef = useRef<string | null>(null);
+  const pendingUploadsRef = useRef<string[]>([]);
 
   const { url: previewUrl } = useSignedUrl(receiptPath);
 
   useEffect(() => {
     if (open) {
       const baseDate = maintenance?.date ?? new Date().toISOString().slice(0, 10);
+      const initialReceipt = maintenance?.receipt_url ?? null;
+      initialReceiptRef.current = initialReceipt;
+      pendingUploadsRef.current = [];
       setDate(baseDate);
       setOdometer(maintenance?.odometer?.toString() ?? '');
       setCost(maintenance?.cost?.toString() ?? '');
       setTitle(maintenance?.title ?? '');
       setDescription(maintenance?.description ?? '');
       setCategory(maintenance?.category ?? 'oleo');
-      setReceiptPath(maintenance?.receipt_url ?? null);
+      setReceiptPath(initialReceipt);
       setCreateReminder(false);
       setReminderMonths(6);
       setReminderDate(addMonthsISO(baseDate, 6));
@@ -84,6 +89,13 @@ export default function MaintenanceFormModal({
   }, [open, maintenance]);
 
   if (!open || !vehicle) return null;
+
+  async function handleClose() {
+    const unused = pendingUploadsRef.current.filter((p) => p !== initialReceiptRef.current);
+    pendingUploadsRef.current = [];
+    await Promise.all(unused.map((p) => deleteStorageFile(p)));
+    onClose();
+  }
 
   function handleSelectReminderMonths(months: number) {
     setReminderMonths(months);
@@ -99,6 +111,7 @@ export default function MaintenanceFormModal({
     setError(null);
     try {
       const path = await uploadImage(file, 'receipts');
+      pendingUploadsRef.current.push(path);
       setReceiptPath(path);
     } catch (err) {
       setError(err instanceof UploadError ? err.message : 'Não foi possível enviar o recibo.');
@@ -143,6 +156,17 @@ export default function MaintenanceFormModal({
         maintenance?.id,
         reminderPayload,
       );
+
+      const toDelete = new Set<string>();
+      if (initialReceiptRef.current && receiptPath !== initialReceiptRef.current) {
+        toDelete.add(initialReceiptRef.current);
+      }
+      pendingUploadsRef.current.forEach((p) => {
+        if (p !== receiptPath) toDelete.add(p);
+      });
+      pendingUploadsRef.current = [];
+      await Promise.all(Array.from(toDelete).map((p) => deleteStorageFile(p)));
+
       onClose();
     } catch {
       setError('Erro ao registrar manutenção.');
@@ -151,9 +175,12 @@ export default function MaintenanceFormModal({
     }
   }
 
+  const receiptWillBeDeleted =
+    Boolean(initialReceiptRef.current) && receiptPath !== initialReceiptRef.current;
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={handleClose} />
       <div className="relative w-full sm:max-w-lg bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[92vh] overflow-y-auto">
         <div className="sticky top-0 bg-white/95 backdrop-blur px-6 py-4 border-b border-slate-100 flex items-center justify-between rounded-t-3xl z-10">
           <div>
@@ -166,7 +193,8 @@ export default function MaintenanceFormModal({
             </p>
           </div>
           <button
-            onClick={onClose}
+            type="button"
+            onClick={handleClose}
             className="w-9 h-9 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
           >
             <X size={20} />
@@ -372,6 +400,11 @@ export default function MaintenanceFormModal({
               onChange={handleReceipt}
             />
             <p className="text-xs text-slate-400 mt-1.5">JPG, PNG, WebP ou GIF, máx. 5 MB</p>
+            {receiptWillBeDeleted && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 mt-2">
+                Atenção: ao salvar, a foto anterior do recibo será excluída permanentemente e não poderá ser restaurada.
+              </p>
+            )}
           </div>
 
           {error && (
@@ -381,7 +414,7 @@ export default function MaintenanceFormModal({
           <div className="flex gap-3 pt-2">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-medium hover:bg-slate-50 transition-colors"
             >
               Cancelar
